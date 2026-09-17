@@ -24,8 +24,9 @@ const GEMINI_API_KEYS = [
   atob("QVEuQWI4Uk42TFJRVGQzbGhOZ1g2eE5BeEpnVzV6bi0xRFFPSjdoNXFHc0pud0F0MmM5NVE=")
 ];
 let currentKeyIndex = 0;
-const GEMINI_MODEL = "gemini-flash-latest";
-const getGeminiUrl = (key) => `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+// Model utama super cepat (Lite = ultra low latency & bebas lonjakan 503) + fallback model
+const GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+const getGeminiUrl = (key, model = GEMINI_MODELS[0]) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
 
 // Image provider (no key by default). You can switch to "openai" or "stability" if you have keys.
 const IMG_PROVIDER = "pollinations"; // "pollinations" | "openai" | "stability"
@@ -199,9 +200,11 @@ ATURAN MUTLAK CARA MENJAWAB:
   let lastError = null;
   let success = false;
 
-  for (let attempt = 0; attempt < GEMINI_API_KEYS.length; attempt++) {
+  // Coba putar 4 key dengan model super cepat, jika server Google 503 auto-fallback
+  for (let attempt = 0; attempt < GEMINI_API_KEYS.length * GEMINI_MODELS.length; attempt++) {
     const key = GEMINI_API_KEYS[currentKeyIndex];
-    const url = getGeminiUrl(key);
+    const model = GEMINI_MODELS[Math.floor(attempt / GEMINI_API_KEYS.length)];
+    const url = getGeminiUrl(key, model);
 
     try {
       const response = await fetch(url, {
@@ -219,14 +222,14 @@ ATURAN MUTLAK CARA MENJAWAB:
       MessageElement.innerHTML = html;
       chatHistory.push({ role: "model", parts: [{ text: raw }] });
 
-      // Putar ke key berikutnya untuk giliran selanjutnya (round-robin)
+      // Rotasi ke token/key berikutnya agar kuota selalu imbang dan awet
       currentKeyIndex = (currentKeyIndex + 1) % GEMINI_API_KEYS.length;
       success = true;
       break;
     } catch (err) {
-      console.warn(`Key #${currentKeyIndex + 1} mengalami kendala (${err.message}). Beralih ke key berikutnya...`);
+      console.warn(`Token #${currentKeyIndex + 1} (model: ${model}) kendala: ${err.message}. Ganti token berikutnya...`);
       lastError = err;
-      // Ganti ke key selanjutnya
+      // Ganti ke token/key selanjutnya secara instan
       currentKeyIndex = (currentKeyIndex + 1) % GEMINI_API_KEYS.length;
     }
   }
